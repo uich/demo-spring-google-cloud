@@ -1,0 +1,10 @@
+logging:
+  level:
+    io.netty.handler.ssl: debug
+
+google:
+  cloud:
+    scopes:
+      - https://www.googleapis.com/auth/cloud-platform
+    json-key: 
+    api-key: 
