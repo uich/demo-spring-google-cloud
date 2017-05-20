@@ -10,7 +10,6 @@ import java.util.UUID;
 import java.util.concurrent.Callable;
 
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.HttpStatus;
@@ -21,6 +20,7 @@ import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.util.StreamUtils;
 
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -28,19 +28,22 @@ import lombok.extern.slf4j.Slf4j;
  *
  * @author uich
  */
+@Slf4j
 public class LoggingRequestResponseInterceptor implements ClientHttpRequestInterceptor {
 
   @Override
   public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution)
     throws IOException {
-    return Execution.from(request, body)
-      .logRequest()
-      .execute(execution)
-      .logResponse()
-      .getResponse();
+    if (log.isDebugEnabled()) {
+      return Execution.from(request, body)
+        .logRequest()
+        .execute(execution)
+        .logResponse()
+        .getResponse();
+    }
+    return execution.execute(request, body);
   }
 
-  @Slf4j(topic = "Http Notification Req/Res")
   private static class Execution {
     private final String uuid = UUID.randomUUID().toString();
 
@@ -65,10 +68,10 @@ public class LoggingRequestResponseInterceptor implements ClientHttpRequestInter
 
     Execution logRequest() {
       final String requestBody = ArrayUtils.isNotEmpty(this.body)
-        ? StringUtils.toEncodedString(this.body, extractCharset(this.request.getHeaders()))
+        ? new String(this.body, extractCharset(this.request.getHeaders()))
         : null;
 
-      log.info("Request:[uuid:[{}], method:[{}], uri:[{}], body[{}], headers:[{}]]", this.uuid,
+      log.debug("Request:[uuid:[{}], method:[{}], uri:[{}], body[{}], headers:[{}]]", this.uuid,
         this.request.getMethod(),
         this.request.getURI(), requestBody, this.request.getHeaders());
 
@@ -78,7 +81,7 @@ public class LoggingRequestResponseInterceptor implements ClientHttpRequestInter
     Execution logResponse() {
       SafeResponse safe = new SafeResponse(this.response);
 
-      log.info("Response:[uuid:[{}], status:[{}], text:[{}], body[{}], headers:[{}]]", this.uuid, safe.getStatusCode(),
+      log.debug("Response:[uuid:[{}], status:[{}], text:[{}], body[{}], headers:[{}]]", this.uuid, safe.getStatusCode(),
         safe.getStatusText(), safe.getResponseBodyAsText(), safe.getHttpHeaders());
 
       this.response = safe.createRecycledClientHttpResponse();
@@ -109,7 +112,11 @@ public class LoggingRequestResponseInterceptor implements ClientHttpRequestInter
       this.original = response;
       this.responseCharset = extractCharset(response.getHeaders());
 
-      this.responseBodyAsText = ignoreError(() -> StreamUtils.copyToString(response.getBody(), this.responseCharset));
+      this.responseBodyAsText = ignoreError(() -> {
+        try (InputStream body = response.getBody()) {
+          return StreamUtils.copyToString(body, this.responseCharset);
+        }
+      });
       this.statusText = ignoreError(response::getStatusText);
       this.statusCode = ignoreError(response::getStatusCode);
       this.httpHeaders = ignoreError(response::getHeaders);
@@ -129,17 +136,12 @@ public class LoggingRequestResponseInterceptor implements ClientHttpRequestInter
     }
   }
 
+  @RequiredArgsConstructor
   private static class RecycledClientHttpResponse implements ClientHttpResponse {
 
     private final ClientHttpResponse original;
-    private final InputStream reopenableInputStream;
-
-    RecycledClientHttpResponse(ClientHttpResponse original, String responseBodyAsText, Charset responseCharset) {
-      this.original = original;
-      this.reopenableInputStream = responseBodyAsText != null
-        ? new ByteArrayInputStream(responseBodyAsText.getBytes(responseCharset))
-        : null;
-    }
+    private final String responseBodyAsText;
+    private final Charset responseCharset;
 
     @Override
     public HttpHeaders getHeaders() {
@@ -148,7 +150,7 @@ public class LoggingRequestResponseInterceptor implements ClientHttpRequestInter
 
     @Override
     public InputStream getBody() throws IOException {
-      return this.reopenableInputStream;
+      return new ByteArrayInputStream(this.responseBodyAsText.getBytes(this.responseCharset));
     }
 
     @Override
