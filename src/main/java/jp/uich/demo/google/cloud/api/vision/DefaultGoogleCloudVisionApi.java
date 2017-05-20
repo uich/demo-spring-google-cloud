@@ -24,10 +24,13 @@ import com.google.cloud.vision.v1.AnnotateImageResponse;
 import com.google.cloud.vision.v1.BatchAnnotateImagesResponse;
 import com.google.common.collect.Iterables;
 
+import lombok.extern.slf4j.Slf4j;
+
 @Primary
 @Component
 @ConditionalOnProperty(name = "google.cloud.json-key")
 @ConditionalOnClass(name = "org.eclipse.jetty.servlets.ConcatServlet")
+@Slf4j
 public class DefaultGoogleCloudVisionApi implements GoogleCloudVisionApi, InitializingBean, DisposableBean {
 
   @Autowired
@@ -66,6 +69,7 @@ public class DefaultGoogleCloudVisionApi implements GoogleCloudVisionApi, Initia
   @Override
   public void destroy() throws Exception {
     this.vision.close();
+    log.debug("vision api closed.");
   }
 
 }
